@@ -3,6 +3,139 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  
+  // Authentication elements
+  const loginBtn = document.getElementById("login-btn");
+  const logoutBtn = document.getElementById("logout-btn");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const loginError = document.getElementById("login-error");
+  const userInfo = document.getElementById("user-info");
+  const usernameDisplay = document.getElementById("username-display");
+  const closeModal = document.querySelector(".close");
+  
+  // Authentication state
+  let authToken = localStorage.getItem("authToken");
+  let isAuthenticated = false;
+
+  // Check authentication status on load
+  async function checkAuth() {
+    if (authToken) {
+      try {
+        const response = await fetch("/auth/verify", {
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
+        });
+        const data = await response.json();
+        if (data.authenticated) {
+          isAuthenticated = true;
+          updateUIForAuth(data.username);
+        } else {
+          authToken = null;
+          localStorage.removeItem("authToken");
+        }
+      } catch (error) {
+        console.error("Auth check failed:", error);
+        authToken = null;
+        localStorage.removeItem("authToken");
+      }
+    }
+    updateUI();
+  }
+
+  // Update UI based on authentication status
+  function updateUIForAuth(username) {
+    loginBtn.classList.add("hidden");
+    userInfo.classList.remove("hidden");
+    usernameDisplay.textContent = `👤 ${username}`;
+    signupForm.classList.remove("hidden");
+  }
+
+  function updateUIForNoAuth() {
+    loginBtn.classList.remove("hidden");
+    userInfo.classList.add("hidden");
+    signupForm.classList.add("hidden");
+  }
+
+  function updateUI() {
+    if (isAuthenticated) {
+      // UI is already updated in updateUIForAuth
+    } else {
+      updateUIForNoAuth();
+    }
+  }
+
+  // Login modal handling
+  loginBtn.addEventListener("click", () => {
+    loginModal.classList.remove("hidden");
+  });
+
+  closeModal.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+    loginError.classList.add("hidden");
+  });
+
+  window.addEventListener("click", (event) => {
+    if (event.target === loginModal) {
+      loginModal.classList.add("hidden");
+      loginError.classList.add("hidden");
+    }
+  });
+
+  // Handle login
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch("/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ username, password })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        authToken = data.token;
+        localStorage.setItem("authToken", authToken);
+        isAuthenticated = true;
+        updateUIForAuth(data.username);
+        loginModal.classList.add("hidden");
+        loginForm.reset();
+        loginError.classList.add("hidden");
+      } else {
+        loginError.textContent = "Invalid username or password";
+        loginError.classList.remove("hidden");
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      loginError.textContent = "Login failed. Please try again.";
+      loginError.classList.remove("hidden");
+    }
+  });
+
+  // Handle logout
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await fetch("/auth/logout", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${authToken}`
+        }
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+    
+    authToken = null;
+    localStorage.removeItem("authToken");
+    isAuthenticated = false;
+    updateUIForNoAuth();
+  });
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -69,6 +202,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle unregister functionality
   async function handleUnregister(event) {
+    if (!isAuthenticated) {
+      messageDiv.textContent = "Please login as a teacher to unregister students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+      return;
+    }
+
     const button = event.target;
     const activity = button.getAttribute("data-activity");
     const email = button.getAttribute("data-email");
@@ -80,6 +221,9 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
         }
       );
 
@@ -114,6 +258,14 @@ document.addEventListener("DOMContentLoaded", () => {
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
+    if (!isAuthenticated) {
+      messageDiv.textContent = "Please login as a teacher to register students";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+      return;
+    }
+
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
 
@@ -124,6 +276,9 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
         }
       );
 
@@ -156,5 +311,6 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Initialize app
+  checkAuth();
   fetchActivities();
 });
